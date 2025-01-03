@@ -2,6 +2,7 @@ pipeline {
     agent any
     environment {
         DOCKER_HUB_CREDENTIALS = 'dockerhub-creds' // Replace with your Docker Hub credentials ID
+        MAVEN_REPO_CREDENTIALS = 'maven-repo-creds' // Replace with your private Maven repo credentials ID
     }
     stages {
         stage('Checkout Backend Code') {
@@ -10,10 +11,18 @@ pipeline {
                 git branch: 'dev', url: 'https://github.com/cpgrampoc/backend.git'
             }
         }
+        stage('Setup Maven Settings for Private Repo') {
+            steps {
+                echo 'Setting up Maven settings for private repository...'
+                configFileProvider([configFile(fileId: 'maven-settings-id', targetLocation: 'settings.xml')]) {
+                    sh 'mkdir -p ~/.m2 && cp settings.xml ~/.m2/settings.xml'
+                }
+            }
+        }
         stage('Build Maven Project') {
             steps {
                 echo 'Building Maven project...'
-                dir('cpgram-application-service') { // Navigate to the correct directory
+                dir('cpgram-application-service') {
                     sh 'mvn clean package -DskipTests'
                 }
             }
@@ -21,7 +30,7 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 echo 'Building Docker image...'
-                dir('cpgram-application-service') { // Ensure Docker context is correct
+                dir('cpgram-application-service') {
                     sh 'docker build -t cpgram/cpgram-application-service:latest -f Dockerfile .'
                 }
             }
@@ -29,7 +38,7 @@ pipeline {
         stage('Push Docker Image') {
             steps {
                 echo 'Pushing Docker image to Docker Hub...'
-                withCredentials([usernamePassword(credentialsId: "${DOCKER_HUB_CREDENTIALS}", usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
+                withCredentials([usernamePassword(credentialsId: "$DOCKER_HUB_CREDENTIALS", usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
                     sh 'echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin'
                     sh 'docker push cpgram/cpgram-application-service:latest'
                 }
