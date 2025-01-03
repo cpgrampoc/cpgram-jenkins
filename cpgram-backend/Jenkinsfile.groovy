@@ -1,14 +1,9 @@
 pipeline {
     agent any
-    environment {
-        DOCKER_HUB_CREDENTIALS = 'dockerhub-creds' // Jenkins credentials ID for Docker Hub
-        DOCKER_IMAGE = 'cpgram/cpgram-application-service:latest'
-    }
     stages {
-        stage('Checkout Code') {
+        stage('Checkout Backend Code') {
             steps {
-                echo 'Checking out code...'
-                checkout scm
+                git branch: 'dev', url: 'https://github.com/cpgrampoc/backend.git'
             }
         }
         stage('Build Maven Project') {
@@ -20,42 +15,36 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 echo 'Building Docker image...'
-                sh "docker build -t ${DOCKER_IMAGE} -f cpgram-backend/Dockerfile ."
+                sh 'docker build -t cpgram/backend-application:latest .'
             }
         }
         stage('Push Docker Image') {
             steps {
                 echo 'Pushing Docker image to Docker Hub...'
-                withCredentials([usernamePassword(credentialsId: DOCKER_HUB_CREDENTIALS, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    sh 'docker login -u $DOCKER_USER -p $DOCKER_PASS'
-                    sh "docker push ${DOCKER_IMAGE}"
+                withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
+                    sh 'docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD'
                 }
+                sh 'docker push cpgram/backend-application:latest'
             }
         }
         stage('Deploy Docker Image') {
             steps {
-                echo 'Deploying Docker image...'
+                echo 'Deploying Docker image to the server...'
                 sh '''
-                # Remove the existing container
                 docker stop cpgram-backend || true
                 docker rm cpgram-backend || true
-
-                # Run the updated container
-                docker run -d --name cpgram-backend -p 8087:8087 ${DOCKER_IMAGE}
+                docker run -d --name cpgram-backend -p 8087:8087 cpgram/backend-application:latest
                 '''
             }
         }
     }
     post {
         always {
-            echo 'Performing cleanup...'
+            echo 'Cleaning up workspace...'
             cleanWs()
         }
-        success {
-            echo 'Pipeline executed successfully!'
-        }
         failure {
-            echo 'Pipeline execution failed!'
+            echo 'Pipeline failed!'
         }
     }
 }
