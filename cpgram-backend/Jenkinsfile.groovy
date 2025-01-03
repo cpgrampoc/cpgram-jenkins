@@ -1,9 +1,8 @@
 pipeline {
     agent any
     environment {
-        DOCKER_HUB_CREDENTIALS = 'dockerhub-creds'
-        IMAGE_NAME = 'cpgram/cpgram-application-service'
-        CONTAINER_NAME = 'cpgram-backend'
+        DOCKER_HUB_CREDENTIALS = 'dockerhub-creds' // Jenkins credentials ID for Docker Hub
+        DOCKER_IMAGE = 'cpgram/cpgram-application-service:latest'
     }
     stages {
         stage('Checkout Code') {
@@ -12,17 +11,24 @@ pipeline {
                 checkout scm
             }
         }
+        stage('Build Maven Project') {
+            steps {
+                echo 'Building Maven project...'
+                sh 'mvn clean package -DskipTests'
+            }
+        }
         stage('Build Docker Image') {
             steps {
                 echo 'Building Docker image...'
-                sh "docker build -t ${IMAGE_NAME}:latest -f cpgram-backend/Dockerfile ."
+                sh "docker build -t ${DOCKER_IMAGE} -f cpgram-backend/Dockerfile ."
             }
         }
         stage('Push Docker Image') {
             steps {
                 echo 'Pushing Docker image to Docker Hub...'
-                withDockerRegistry([credentialsId: DOCKER_HUB_CREDENTIALS, url: '']) {
-                    sh "docker push ${IMAGE_NAME}:latest"
+                withCredentials([usernamePassword(credentialsId: DOCKER_HUB_CREDENTIALS, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh 'docker login -u $DOCKER_USER -p $DOCKER_PASS'
+                    sh "docker push ${DOCKER_IMAGE}"
                 }
             }
         }
@@ -30,14 +36,12 @@ pipeline {
             steps {
                 echo 'Deploying Docker image...'
                 sh '''
-                    # Stop and remove the old container
-                    if [ $(docker ps -q -f name=${CONTAINER_NAME}) ]; then
-                        docker stop ${CONTAINER_NAME}
-                        docker rm ${CONTAINER_NAME}
-                    fi
-                    
-                    # Run the new container
-                    docker run -d --name ${CONTAINER_NAME} -p 8087:8087 ${IMAGE_NAME}:latest
+                # Remove the existing container
+                docker stop cpgram-backend || true
+                docker rm cpgram-backend || true
+
+                # Run the updated container
+                docker run -d --name cpgram-backend -p 8087:8087 ${DOCKER_IMAGE}
                 '''
             }
         }
@@ -47,11 +51,11 @@ pipeline {
             echo 'Performing cleanup...'
             cleanWs()
         }
+        success {
+            echo 'Pipeline executed successfully!'
+        }
         failure {
             echo 'Pipeline execution failed!'
-        }
-        success {
-            echo 'Pipeline execution completed successfully!'
         }
     }
 }
