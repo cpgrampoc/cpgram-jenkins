@@ -1,11 +1,10 @@
 pipeline {
     agent any
-
     environment {
-        DOCKER_IMAGE = "cpgram/backend-application:latest"
-        DOCKER_HUB_CREDENTIALS = 'dockerhub-creds' // This matches your Jenkins credentials ID
+        DOCKER_HUB_CREDENTIALS = 'dockerhub-creds'
+        IMAGE_NAME = 'cpgram/cpgram-application-service'
+        CONTAINER_NAME = 'cpgram-backend'
     }
-
     stages {
         stage('Checkout Code') {
             steps {
@@ -13,46 +12,46 @@ pipeline {
                 checkout scm
             }
         }
-
         stage('Build Docker Image') {
             steps {
                 echo 'Building Docker image...'
-                sh 'docker build -t $DOCKER_IMAGE .'
+                sh "docker build -t ${IMAGE_NAME}:latest -f cpgram-backend/Dockerfile ."
             }
         }
-
         stage('Push Docker Image') {
             steps {
                 echo 'Pushing Docker image to Docker Hub...'
-                withDockerRegistry(credentialsId: "$DOCKER_HUB_CREDENTIALS", url: '') {
-                    sh 'docker push $DOCKER_IMAGE'
+                withDockerRegistry([credentialsId: DOCKER_HUB_CREDENTIALS, url: '']) {
+                    sh "docker push ${IMAGE_NAME}:latest"
                 }
             }
         }
-
         stage('Deploy Docker Image') {
             steps {
                 echo 'Deploying Docker image...'
                 sh '''
-                docker pull $DOCKER_IMAGE
-                docker stop backend-container || true
-                docker rm backend-container || true
-                docker run -d --name backend-container -p 8080:8080 $DOCKER_IMAGE
+                    # Stop and remove the old container
+                    if [ $(docker ps -q -f name=${CONTAINER_NAME}) ]; then
+                        docker stop ${CONTAINER_NAME}
+                        docker rm ${CONTAINER_NAME}
+                    fi
+                    
+                    # Run the new container
+                    docker run -d --name ${CONTAINER_NAME} -p 8087:8087 ${IMAGE_NAME}:latest
                 '''
             }
         }
     }
-
     post {
-        success {
-            echo 'Pipeline executed successfully!'
+        always {
+            echo 'Performing cleanup...'
+            cleanWs()
         }
         failure {
             echo 'Pipeline execution failed!'
         }
-        always {
-            echo 'Performing cleanup...'
-            cleanWs()
+        success {
+            echo 'Pipeline execution completed successfully!'
         }
     }
 }
